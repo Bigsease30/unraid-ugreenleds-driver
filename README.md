@@ -54,6 +54,22 @@ DX4600, DX4700, DXP2800, DXP4800 (incl. Plus/Pro), DXP6800, DXP8800, DXP480T (st
 | `CHECK_NETDEV_INTERVAL` | `30` | Gateway check (s) |
 | `NETDEV_INTERFACE` | *(auto)* | Force the interface the network LED follows |
 
+## LED Color Meanings
+| `Disk LED Colors |
+| `Color 	RGB Values 	Meaning |
+| `White | 255 255 255 | 	Healthy disk - Normal operation (solid) |
+| `White | 	255 255 255 | 	Disk activity - Brief flash when I/O detected |
+| `Red | 	255 0 0 | 	Disk unavailable/offline - Disk has gone offline or is not accessible (solid) |
+| `Network LED Colors |
+| `Color | 	RGB Values | 	Meaning |
+| `Orange | 	255 165 0 | 	Normal network - Default state when speed is unknown (solid) |
+| `Green | 	0 255 0 | 	100 Mbps connection (solid) |
+| `Blue | 	0 0 255 | | 	1 Gbps connection (solid) |
+| `Yellow | 	255 255 0 | 	2.5 Gbps connection (solid) |
+| `White | 	255 255 255 | 	10 Gbps connection (solid) |
+| `Red | 	255 0 0 | 	Gateway unreachable - Network connectivity issues (solid) |
+| `Any Color | 	Various | 	Network activity - Flashes on TX/RX activity |
+
 ## Building a module for a new Unraid release
 
 GitHub: **Actions → Build kernel module → Run workflow**, enter the version (and the zip URL for betas/RCs).
