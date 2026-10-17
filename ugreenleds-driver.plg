@@ -6,7 +6,7 @@
   <!ENTITY md5         "49a7a6db3d6e668b57d7ddd3ca24d3f8">
   <!ENTITY i2c-version "4.3">
   <!ENTITY i2c-md5     "779c835a2eb2e2ae65319f8de2d6a7d3">
-  <!ENTITY gitURL      "https://raw.githubusercontent.com/&author;/unraid-&name;/master">
+  <!ENTITY gitURL      "https://raw.githubusercontent.com/&author;/unraid-&name;/main">
   <!ENTITY pluginURL   "&gitURL;/&name;.plg">
   <!ENTITY plugin      "/boot/config/plugins/&name;">
   <!ENTITY emhttp      "/usr/local/emhttp/plugins/&name;">
