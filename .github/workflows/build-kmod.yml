@@ -1,0 +1,60 @@
+name: Build kernel module
+
+# Builds led-ugreen.ko for a given Unraid release and commits the package to
+# packages/kmod/<kernel>/. Runs weekly to pick up new stable Unraid releases,
+# or manually for any version (including betas/RCs).
+on:
+  workflow_dispatch:
+    inputs:
+      unraid_version:
+        description: "Unraid version, e.g. 7.3.3 (leave empty for latest stable)"
+        required: false
+      zip_url:
+        description: "Optional direct URL to the unRAIDServer-*.zip (needed for betas/RCs not in the stable list)"
+        required: false
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick Unraid version
+        id: ver
+        run: |
+          V="${{ github.event.inputs.unraid_version }}"
+          if [ -z "$V" ]; then
+            V="$(curl -fsSL 'https://releases.unraid.net/json' | jq -r '.[0].version')"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if grep -rqx "$V" packages/kmod/*/UNRAID_VERSION 2>/dev/null && [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Module for Unraid $V already present"
+          fi
+
+      - name: Install build dependencies
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential bc flex bison libelf-dev libssl-dev \
+            cpio squashfs-tools zstd xz-utils unzip curl jq python3 kmod binutils
+
+      - name: Build
+        if: steps.ver.outputs.skip != 'true'
+        run: sudo WORK="$RUNNER_TEMP/kmod" ./source/build-kmod.sh "${{ steps.ver.outputs.version }}" "${{ github.event.inputs.zip_url }}"
+
+      - name: Commit package
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" packages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/kmod
+          git diff --cached --quiet && { echo "nothing to commit"; exit 0; }
+          git commit -m "kmod: build for Unraid ${{ steps.ver.outputs.version }}"
+          git push
