@@ -2,8 +2,8 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name        "ugreenleds-driver">
   <!ENTITY author      "Bigsease30">
-  <!ENTITY version     "2026.10.17a">
-  <!ENTITY md5         "f6efcb4f70bdca3d0567d2e1b316f9ff">
+  <!ENTITY version     "2026.10.17b">
+  <!ENTITY md5         "d5c323c813fd09439ce4981bb10520ab">
   <!ENTITY i2c-version "4.3">
   <!ENTITY i2c-md5     "779c835a2eb2e2ae65319f8de2d6a7d3">
   <!ENTITY gitURL      "https://raw.githubusercontent.com/&author;/unraid-&name;/main">
@@ -16,6 +16,9 @@
 <PLUGIN  name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" min="7.0.0" icon="lightbulb-o" support="https://github.com/&author;/unraid-&name;/issues">
 
 <CHANGES>
+
+###2026.10.17b
+- 10 GbE network LED color is now blue (0 0 255); existing configs still on the old white default are updated
 
 ###2026.10.17a
 - Disk LEDs now blink green during activity and return to solid white when idle (new setting COLOR_DISK_ACTIVITY, default "0 255 0")
@@ -136,7 +139,7 @@ COLOR_NETDEV_LINK_100="0 255 0"
 COLOR_NETDEV_LINK_1000="0 0 255"
 COLOR_NETDEV_LINK_2500="255 255 0"
 COLOR_NETDEV_LINK_5000="0 255 255"
-COLOR_NETDEV_LINK_10000="255 255 255"
+COLOR_NETDEV_LINK_10000="0 0 255"
 COLOR_NETDEV_GATEWAY_UNREACHABLE="255 0 0"
 CHECK_NETDEV_INTERVAL="30"
 NETDEV_INTERFACE=""
@@ -145,6 +148,8 @@ else
   # add keys introduced by this fork to existing configs
   grep -q '^COLOR_NETDEV_LINK_5000=' "&plugin;/settings.cfg" || echo 'COLOR_NETDEV_LINK_5000="0 255 255"' &gt;&gt; "&plugin;/settings.cfg"
   grep -q '^NETDEV_INTERFACE=' "&plugin;/settings.cfg" || echo 'NETDEV_INTERFACE=""' &gt;&gt; "&plugin;/settings.cfg"
+  # 10 GbE default changed from white to blue; only touch it if it is still the old default
+  sed -i 's/^COLOR_NETDEV_LINK_10000="255 255 255"$/COLOR_NETDEV_LINK_10000="0 0 255"/' "&plugin;/settings.cfg"
   grep -q '^COLOR_DISK_ACTIVITY=' "&plugin;/settings.cfg" || echo 'COLOR_DISK_ACTIVITY="0 255 0"' &gt;&gt; "&plugin;/settings.cfg"
 fi
 

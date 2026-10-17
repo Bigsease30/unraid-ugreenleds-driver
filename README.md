@@ -49,7 +49,7 @@ DX4600, DX4700, DXP2800, DXP4800 (incl. Plus/Pro), DXP6800, DXP8800, DXP480T (st
 | `CHECK_DISK_ONLINE_INTERVAL` | `5` | Disk presence poll (s) |
 | `CHECK_GATEWAY_CONNECTIVITY` | `true` | Ping the gateway, red if unreachable |
 | `COLOR_NETDEV_NORMAL` | `255 165 0` | Unknown link speed |
-| `COLOR_NETDEV_LINK_100/1000/2500/5000/10000` | green / blue / yellow / cyan / white | Per link speed |
+| `COLOR_NETDEV_LINK_100/1000/2500/5000/10000` | green / blue / yellow / cyan / blue | Per link speed |
 | `COLOR_NETDEV_GATEWAY_UNREACHABLE` | `255 0 0` | |
 | `CHECK_NETDEV_INTERVAL` | `30` | Gateway check (s) |
 | `NETDEV_INTERFACE` | *(auto)* | Force the interface the network LED follows |
@@ -58,7 +58,7 @@ DX4600, DX4700, DXP2800, DXP4800 (incl. Plus/Pro), DXP6800, DXP8800, DXP480T (st
 | `Disk LED Colors` |
 | `Color` 	`RGB Values` 	`Meaning` |
 | `White` | `255 255 255` | 	`Healthy disk - Normal operation (solid)` |
-| `White` | 	`255 255 255` | 	`Disk activity - Brief flash when I/O detected` |
+| `Green` | 	`0 255 0` | 	`Disk activity - Blinks while I/O is detected, back to white when idle` |
 | `Red` | 	`255 0 0` | 	`Disk unavailable/offline - Disk has gone offline or is not accessible (solid)` |
 ## Network LED Colors 
 | `Color` | 	`RGB Values` | 	`Meaning` |
@@ -66,7 +66,7 @@ DX4600, DX4700, DXP2800, DXP4800 (incl. Plus/Pro), DXP6800, DXP8800, DXP480T (st
 | `Green` | 	`0 255 0` | 	`100 Mbps connection (solid)` |
 | `Blue` | 	`0 0 255`  | 	`1 Gbps connection (solid)` |
 | `Yellow` | 	`255 255 0` | 	`2.5 Gbps connection (solid)` |
-| `White` | 	`255 255 255` | 	`10 Gbps connection (solid)` |
+| `Blue` | 	`0 0 255` | 	`10 Gbps connection (solid)` |
 | `Red` | 	`255 0 0` | 	`Gateway unreachable - Network connectivity issues (solid)` |
 | `Any Color` | 	`Various` | 	`Network activity - Flashes on TX/RX activity` |
 
