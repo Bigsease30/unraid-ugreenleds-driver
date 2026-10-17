@@ -1,0 +1,312 @@
+#!/bin/bash
+# UGREEN NAS LED daemon for Unraid
+# Based on ich777/unraid-ugreenleds-driver and miskcoo/ugreen_leds_controller
+# Community-maintained fork for Unraid 7.3.x and later.
+
+LOCKFILE="/var/run/ugreen-leds.lock"
+CONFIG="/boot/config/plugins/ugreenleds-driver/settings.cfg"
+
+log() { logger -t ugreen-leds "$*"; }
+
+# ---------------------------------------------------------------------------
+# single instance check - must happen BEFORE the exit trap is installed,
+# otherwise a second instance would delete the running instance's lock file
+# ---------------------------------------------------------------------------
+if [[ -f "${LOCKFILE}" ]] && kill -0 "$(cat "${LOCKFILE}" 2>/dev/null)" 2>/dev/null; then
+  echo "ugreen-leds: already running!"
+  log "Error: ugreen-leds already running (pid $(cat "${LOCKFILE}"))"
+  exit 1
+fi
+echo $$ > "${LOCKFILE}"
+
+exit-ugreen-leds() {
+  [[ "$(cat "${LOCKFILE}" 2>/dev/null)" == "$$" ]] && rm -f "${LOCKFILE}"
+  [[ -n "${netdev_check_pid}" ]] && kill "${netdev_check_pid}" 2>/dev/null
+  [[ -n "${disk_online_check_pid}" ]] && kill "${disk_online_check_pid}" 2>/dev/null
+}
+trap 'exit-ugreen-leds' EXIT
+trap 'exit 0' TERM INT
+
+# ---------------------------------------------------------------------------
+# settings (with defaults, so an older settings.cfg missing keys still works)
+# ---------------------------------------------------------------------------
+MAPPING_METHOD="ata"
+DISK_SERIAL=""
+COLOR_DISK_HEALTH="255 255 255"
+BRIGHTNESS_DISK_LEDS="255"
+COLOR_DISK_UNAVAIL="255 0 0"
+LED_REFRESH_INTERVAL="0.5"
+CHECK_DISK_ONLINE_INTERVAL="5"
+CHECK_GATEWAY_CONNECTIVITY="true"
+COLOR_NETDEV_NORMAL="255 165 0"
+COLOR_NETDEV_LINK_100="0 255 0"
+COLOR_NETDEV_LINK_1000="0 0 255"
+COLOR_NETDEV_LINK_2500="255 255 0"
+COLOR_NETDEV_LINK_5000="0 255 255"
+COLOR_NETDEV_LINK_10000="255 255 255"
+COLOR_NETDEV_GATEWAY_UNREACHABLE="255 0 0"
+CHECK_NETDEV_INTERVAL="30"
+NETDEV_INTERFACE=""
+# shellcheck source=/dev/null
+[[ -f "${CONFIG}" ]] && source "${CONFIG}"
+
+# hctl, $> lsblk -S -x hctl -o hctl,serial,name
+hctl_map=("0:0:0:0" "1:0:0:0" "2:0:0:0" "3:0:0:0" "4:0:0:0" "5:0:0:0" "6:0:0:0" "7:0:0:0")
+# serial number, $> lsblk -S -x hctl -o hctl,serial,name
+read -r -a serial_map <<< "${DISK_SERIAL}"
+# ata number, $> ls -l /sys/block
+ata_map=("ata1" "ata2" "ata3" "ata4" "ata5" "ata6" "ata7" "ata8")
+led_map=(disk1 disk2 disk3 disk4 disk5 disk6 disk7 disk8)
+
+# ---------------------------------------------------------------------------
+# network interface: explicit setting > Unraid network.cfg > first br/bond/eth
+# ---------------------------------------------------------------------------
+INTERFACE="${NETDEV_INTERFACE}"
+if [[ -z "${INTERFACE}" && -f /boot/config/network.cfg ]]; then
+  INTERFACE="$(grep -E '^IFNAME\[0\]=' /boot/config/network.cfg | head -1 | cut -d '=' -f2 | tr -d '"[:space:]')"
+fi
+if [[ -z "${INTERFACE}" || ! -e "/sys/class/net/${INTERFACE}" ]]; then
+  for pattern in '^br[0-9]+$' '^bond[0-9]+$' '^eth[0-9]+$'; do
+    INTERFACE="$(ls /sys/class/net | grep -E "${pattern}" | head -1)"
+    [[ -n "${INTERFACE}" ]] && break
+  done
+fi
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+find_i2c_bus() {
+  i2cdetect -l 2>/dev/null | grep "SMBus I801 adapter" | grep -Po "i2c-\d+" | head -1
+}
+
+wait_for_leds() {
+  # the driver probes every LED with retries; poll instead of a fixed sleep
+  local i
+  for i in $(seq 1 30); do
+    [[ -d /sys/class/leds/power || -d /sys/class/leds/disk1 || -d /sys/class/leds/netdev ]] && return 0
+    sleep 0.5
+  done
+  return 1
+}
+
+default_modules() {
+  /sbin/modprobe i2c-dev
+  if ! /sbin/modprobe led-ugreen; then
+    log "Error: could not load led-ugreen kernel module for kernel $(uname -r)"
+    exit 1
+  fi
+  I2C_DEV="$(find_i2c_bus)"
+  if [[ -z "${I2C_DEV}" ]]; then
+    /sbin/modprobe i2c-i801
+    sleep 1
+    I2C_DEV="$(find_i2c_bus)"
+  fi
+  if [[ -z "${I2C_DEV}" ]]; then
+    log "Error: SMBus I801 adapter not found, cannot attach LED controller"
+    exit 1
+  fi
+  # only register the client once (restarting the daemon must not add a duplicate)
+  if [[ ! -e "/sys/bus/i2c/devices/${I2C_DEV#i2c-}-003a" ]]; then
+    echo "led-ugreen 0x3a" > "/sys/bus/i2c/devices/${I2C_DEV}/new_device" 2>/dev/null
+  fi
+  /sbin/modprobe ledtrig-oneshot
+  /sbin/modprobe ledtrig-netdev
+  if ! wait_for_leds; then
+    log "Error: LED controller did not appear in /sys/class/leds"
+    exit 1
+  fi
+}
+
+default_netdevmon() {
+  [[ -d /sys/class/leds/netdev && -n "${INTERFACE}" ]] || return 0
+  echo netdev > /sys/class/leds/netdev/trigger
+  echo "${INTERFACE}" > /sys/class/leds/netdev/device_name
+  echo 1 > /sys/class/leds/netdev/link
+  echo 1 > /sys/class/leds/netdev/tx
+  echo 1 > /sys/class/leds/netdev/rx
+  echo 500 > /sys/class/leds/netdev/interval
+  log "Info: network LED follows ${INTERFACE}"
+}
+
+dxp480t_static() {
+  /sbin/modprobe i2c-dev
+  sleep 1
+  local bus
+  bus="$(find_i2c_bus | cut -d '-' -f2)"
+  [[ -z "${bus}" ]] && { log "Error: SMBus I801 adapter not found"; exit 1; }
+  ## Set status led to static white
+  i2cset -y "${bus}" 0x26 0xa0 1 b # red off
+  i2cset -y "${bus}" 0x26 0xa0 2 b # white off
+  i2cset -y "${bus}" 0x26 0xb1 2 b # white on
+  i2cset -y "${bus}" 0x26 0x51 0 b # Slow Flash off
+  i2cset -y "${bus}" 0x26 0x50 0 b # Permanently on
+}
+
+# link speed of the interface; bridges report no speed, so fall back to a member port
+link_speed() {
+  local ifc="$1" speed member
+  speed="$(cat "/sys/class/net/${ifc}/speed" 2>/dev/null)"
+  if ! [[ "${speed}" =~ ^[0-9]+$ ]] || [[ "${speed}" -le 0 ]]; then
+    speed=""
+    for member in /sys/class/net/"${ifc}"/brif/* /sys/class/net/"${ifc}"/lower_*; do
+      [[ -e "${member}" ]] || continue
+      member="$(basename "${member}")"; member="${member#lower_}"
+      speed="$(cat "/sys/class/net/${member}/speed" 2>/dev/null)"
+      [[ "${speed}" =~ ^[0-9]+$ && "${speed}" -gt 0 ]] && break
+      speed=""
+    done
+  fi
+  echo "${speed}"
+}
+
+set_netdev_color() {
+  local color=""
+  case "$(link_speed "$1")" in
+    100) color="${COLOR_NETDEV_LINK_100}";;
+    1000) color="${COLOR_NETDEV_LINK_1000}";;
+    2500) color="${COLOR_NETDEV_LINK_2500}";;
+    5000) color="${COLOR_NETDEV_LINK_5000}";;
+    10000) color="${COLOR_NETDEV_LINK_10000}";;
+  esac
+  [[ -z "${color}" ]] && color="${COLOR_NETDEV_NORMAL}"
+  echo "${color}" > /sys/class/leds/netdev/color
+}
+
+# ---------------------------------------------------------------------------
+# model detection
+# ---------------------------------------------------------------------------
+product_name="$(dmidecode --string system-product-name 2>/dev/null)"
+case "${product_name}" in
+  DXP6800*)   # tested on DXP6800 Pro
+    log "Info: Found UGREEN DXP6800 series"
+    hctl_map=("2:0:0:0" "3:0:0:0" "4:0:0:0" "5:0:0:0" "0:0:0:0" "1:0:0:0")
+    ata_map=("ata3" "ata4" "ata5" "ata6" "ata1" "ata2")
+    ;;
+  DX4600*)  log "Info: Found UGREEN DX4600 series";;
+  DX4700*)  log "Info: Found UGREEN DX4700 series";;
+  DXP2800*) log "Info: Found UGREEN DXP2800 series";;
+  DXP4800*) log "Info: Found UGREEN DXP4800 series";;
+  DXP8800*) log "Info: Found UGREEN DXP8800 series";;
+  DXP480T*)
+    log "Info: Found UGREEN DXP480T series, setting static white LED"
+    dxp480t_static
+    exit 0
+    ;;
+  *)
+    log "Error: no supported UGREEN NAS found (product name: '${product_name}')"
+    exit 1
+    ;;
+esac
+default_modules
+default_netdevmon
+
+# ---------------------------------------------------------------------------
+# disk -> LED mapping
+# ---------------------------------------------------------------------------
+declare -A devices
+
+disk_enumerating_string() {
+  if [[ "${MAPPING_METHOD}" == ata ]]; then
+    ls -ahl /sys/block | sed 's/\/$//' | awk '{
+      if (match($0, /ata[0-9]+/)) {
+        ata = substr($0, RSTART, RLENGTH);
+        if (match($0, /[^\/]+$/)) {
+          basename = substr($0, RSTART, RLENGTH);
+          print basename, ata;
+        }
+      }
+    }'
+  elif [[ "${MAPPING_METHOD}" == hctl || "${MAPPING_METHOD}" == serial ]]; then
+    lsblk -S -o "name,${MAPPING_METHOD},tran" | grep sata
+  else
+    log "Error: Unsupported mapping method: ${MAPPING_METHOD}"
+    exit 1
+  fi
+}
+
+log "Info: Enumerating disks based on ${MAPPING_METHOD}..."
+declare -A dev_map
+while read -r val key _; do
+  [[ -z "${key}" ]] && continue
+  dev_map[${key}]=${val}
+  log "Info: mapping ${MAPPING_METHOD} ${key} to ${val}"
+done <<< "$(disk_enumerating_string)"
+
+_tmp_str="${MAPPING_METHOD}_map[@]"
+_tmp_arr=("${!_tmp_str}")
+
+for i in "${!led_map[@]}"; do
+  led=${led_map[i]}
+  [[ -d /sys/class/leds/${led} ]] || continue
+  key="${_tmp_arr[i]}"
+  if [[ -n "${key}" && -v "dev_map[${key}]" && -f "/sys/class/block/${dev_map[${key}]}/stat" ]]; then
+    echo oneshot > "/sys/class/leds/${led}/trigger"
+    echo 1 > "/sys/class/leds/${led}/invert"
+    echo 100 > "/sys/class/leds/${led}/delay_on"
+    echo 100 > "/sys/class/leds/${led}/delay_off"
+    echo "${COLOR_DISK_HEALTH}" > "/sys/class/leds/${led}/color"
+    echo "${BRIGHTNESS_DISK_LEDS}" > "/sys/class/leds/${led}/brightness"
+    devices[${led}]=${dev_map[${key}]}
+  else
+    # turn off the LED if no disk is installed in this slot
+    echo none > "/sys/class/leds/${led}/trigger"
+    echo 0 > "/sys/class/leds/${led}/brightness"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# background: gateway / link speed -> network LED color
+# ---------------------------------------------------------------------------
+if [[ "${CHECK_GATEWAY_CONNECTIVITY}" == "true" && -d /sys/class/leds/netdev && -n "${INTERFACE}" ]]; then
+(
+  trap - EXIT
+  while true; do
+    gw="$(ip route | awk '/^default/ { print $3; exit }')"
+    if [[ -n "${gw}" ]] && ping -q -c 1 -W 1 "${gw}" >/dev/null 2>&1; then
+      set_netdev_color "${INTERFACE}"
+    else
+      echo "${COLOR_NETDEV_GATEWAY_UNREACHABLE}" > /sys/class/leds/netdev/color
+    fi
+    sleep "${CHECK_NETDEV_INTERVAL}"
+  done
+) &
+netdev_check_pid=$!
+elif [[ -d /sys/class/leds/netdev && -n "${INTERFACE}" ]]; then
+  set_netdev_color "${INTERFACE}"
+fi
+
+# ---------------------------------------------------------------------------
+# background: disk online check
+# ---------------------------------------------------------------------------
+(
+  trap - EXIT
+  while true; do
+    for led in "${!devices[@]}"; do
+      dev=${devices[$led]}
+      [[ "$(cat "/sys/class/leds/${led}/color" 2>/dev/null)" != "${COLOR_DISK_HEALTH}" ]] && continue
+      if [[ ! -f "/sys/class/block/${dev}/stat" ]]; then
+        echo "${COLOR_DISK_UNAVAIL}" > "/sys/class/leds/${led}/color" 2>/dev/null
+        log "Error: Disk /dev/${dev} went offline at $(date +%Y-%m-%d' '%H:%M:%S)"
+      fi
+    done
+    sleep "${CHECK_DISK_ONLINE_INTERVAL}"
+  done
+) &
+disk_online_check_pid=$!
+
+log "Info: started, monitoring ${#devices[@]} disk(s)"
+
+# ---------------------------------------------------------------------------
+# foreground: disk activity -> oneshot blink
+# ---------------------------------------------------------------------------
+declare -A diskio_data_rw
+while true; do
+  for led in "${!devices[@]}"; do
+    diskio_new_rw="$(cat "/sys/block/${devices[$led]}/stat" 2>/dev/null)"
+    if [[ "${diskio_data_rw[$led]}" != "${diskio_new_rw}" ]]; then
+      echo 1 > "/sys/class/leds/${led}/shot"
+    fi
+    diskio_data_rw[$led]=${diskio_new_rw}
+  done
+  sleep "${LED_REFRESH_INTERVAL}"
+done

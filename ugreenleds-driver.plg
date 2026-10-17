@@ -1,0 +1,191 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+  <!ENTITY name        "ugreenleds-driver">
+  <!ENTITY author      "YOUR_GITHUB_USERNAME">
+  <!ENTITY version     "2026.10.17">
+  <!ENTITY md5         "49a7a6db3d6e668b57d7ddd3ca24d3f8">
+  <!ENTITY i2c-version "4.3">
+  <!ENTITY i2c-md5     "779c835a2eb2e2ae65319f8de2d6a7d3">
+  <!ENTITY gitURL      "https://raw.githubusercontent.com/&author;/unraid-&name;/master">
+  <!ENTITY pluginURL   "&gitURL;/&name;.plg">
+  <!ENTITY plugin      "/boot/config/plugins/&name;">
+  <!ENTITY emhttp      "/usr/local/emhttp/plugins/&name;">
+  <!ENTITY packages    "/boot/config/plugins/&name;/packages">
+]>
+
+<PLUGIN  name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" min="7.0.0" icon="lightbulb-o" support="https://github.com/&author;/unraid-&name;/issues">
+
+<CHANGES>
+
+###2026.10.17
+- Community fork of ich777's deprecated plugin
+- Removed the max="7.3.2" cap; works on Unraid 7.3.3 (kernel 6.18.54-Unraid)
+- Kernel module is now built against the exact kernel config shipped in the Unraid image (fixes the hard lock-up caused by a struct led_classdev size mismatch, miskcoo/ugreen_leds_controller#129)
+- Kernel module is hosted in this repo; no dependency on ich777's release server or the GitHub API
+- Downloads use short timeouts so a boot without network can no longer stall
+- If no module exists for the running kernel, the plugin stays installed and tells you instead of failing
+- Kill switch: create /boot/config/plugins/ugreenleds-driver/disabled to keep the driver from loading at boot
+- Daemon: fixed lock file being deleted by a second instance, duplicate I2C client registration, stale network color, link speed on bridged/bonded interfaces, 5 GbE color
+- Driver: fixed out-of-range read in the status sysfs attribute
+- Dropped the remote plugin_update_helper download
+
+###2026.09.05
+- Increase the interval from netdev to 500ms (ich777)
+
+###2024.06.19
+- Initial release (ich777)
+
+</CHANGES>
+
+<!-- stop the daemon and clean out old userspace packages -->
+<FILE Run="/bin/bash">
+<INLINE>
+pkill -f "/usr/bin/ugreen-leds" >/dev/null 2>&amp;1
+rm -f $(ls &plugin;/&name;-*.txz 2>/dev/null | grep -v '&version;')
+rm -f $(ls &plugin;/i2c-tools-*-x86_64-1.txz 2>/dev/null | grep -v '&i2c-version;')
+</INLINE>
+</FILE>
+
+<FILE Name="&plugin;/&name;-&version;.txz" Run="upgradepkg --install-new">
+<URL>&gitURL;/packages/&name;-&version;.txz</URL>
+<MD5>&md5;</MD5>
+</FILE>
+
+<FILE Name="&plugin;/i2c-tools-&i2c-version;-x86_64-1.txz" Run="upgradepkg --install-new">
+<URL>&gitURL;/packages/i2c-tools-&i2c-version;-x86_64-1.txz</URL>
+<MD5>&i2c-md5;</MD5>
+</FILE>
+
+<FILE Name="&emhttp;/README.md">
+<INLINE>
+**UGREEN LED Driver**
+
+LED driver for UGREEN NAS units (DX4600, DX4700, DXP2800, DXP4800, DXP6800, DXP8800, DXP480T) running Unraid 7.x.
+Community-maintained fork of ich777's plugin, based on https://github.com/miskcoo/ugreen_leds_controller.
+Settings: /boot/config/plugins/ugreenleds-driver/settings.cfg
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE>
+
+KERNEL_V="$(uname -r)"
+KMOD_DIR="&packages;/${KERNEL_V}"
+KMOD_PKG="ugreen_leds-${KERNEL_V//-/_}-x86_64-1.txz"
+KMOD_URL="&gitURL;/packages/kmod/${KERNEL_V}"
+
+no_module() {
+  echo
+  echo "-------------------------------------------------------------------------------"
+  echo " No UGREEN LED kernel module is available yet for kernel ${KERNEL_V}."
+  echo " The plugin is installed but the LEDs will not be driven."
+  echo " Build one with source/build-kmod.sh (see README) or wait for an update."
+  echo "-------------------------------------------------------------------------------"
+  echo
+  logger -t ugreen-leds "No led-ugreen module available for kernel ${KERNEL_V}"
+  exit 0
+}
+
+mkdir -p "${KMOD_DIR}"
+
+# remove module packages cached for other kernels
+for d in &packages;/*; do
+  if [ "${d}" != "${KMOD_DIR}" ]; then
+    rm -rf "${d}"
+  fi
+done
+
+# fetch the module for the running kernel (short timeouts: this also runs at boot)
+if [ ! -f "${KMOD_DIR}/${KMOD_PKG}" ]; then
+  echo "-----------Downloading UGREEN LED kernel module for ${KERNEL_V}-----------"
+  if ! wget -q -T 15 -t 2 -O "${KMOD_DIR}/${KMOD_PKG}" "${KMOD_URL}/${KMOD_PKG}" ; then
+    rm -f "${KMOD_DIR}/${KMOD_PKG}"
+    no_module
+  fi
+  if ! wget -q -T 15 -t 2 -O "${KMOD_DIR}/${KMOD_PKG}.md5" "${KMOD_URL}/${KMOD_PKG}.md5" ; then
+    rm -f "${KMOD_DIR}/${KMOD_PKG}" "${KMOD_DIR}/${KMOD_PKG}.md5"
+    no_module
+  fi
+fi
+
+if [ "$(md5sum "${KMOD_DIR}/${KMOD_PKG}" | awk '{print $1}')" != "$(awk '{print $1}' "${KMOD_DIR}/${KMOD_PKG}.md5" 2>/dev/null)" ]; then
+  echo "-----ERROR - ERROR - ERROR - ERROR - ERROR - ERROR - ERROR - ERROR - ERROR------"
+  echo "-----------------------CHECKSUM ERROR on kernel module--------------------------"
+  rm -f "${KMOD_DIR}/${KMOD_PKG}" "${KMOD_DIR}/${KMOD_PKG}.md5"
+  no_module
+fi
+
+# default settings
+if [ ! -f "&plugin;/settings.cfg" ]; then
+  cat &gt; "&plugin;/settings.cfg" &lt;&lt;'EOF'
+MAPPING_METHOD="ata"
+DISK_SERIAL="SN1 SN2 SN3 SN4"
+COLOR_DISK_HEALTH="255 255 255"
+BRIGHTNESS_DISK_LEDS="255"
+COLOR_DISK_UNAVAIL="255 0 0"
+LED_REFRESH_INTERVAL="0.5"
+CHECK_DISK_ONLINE_INTERVAL="5"
+CHECK_GATEWAY_CONNECTIVITY="true"
+COLOR_NETDEV_NORMAL="255 165 0"
+COLOR_NETDEV_LINK_100="0 255 0"
+COLOR_NETDEV_LINK_1000="0 0 255"
+COLOR_NETDEV_LINK_2500="255 255 0"
+COLOR_NETDEV_LINK_5000="0 255 255"
+COLOR_NETDEV_LINK_10000="255 255 255"
+COLOR_NETDEV_GATEWAY_UNREACHABLE="255 0 0"
+CHECK_NETDEV_INTERVAL="30"
+NETDEV_INTERFACE=""
+EOF
+else
+  # add keys introduced by this fork to existing configs
+  grep -q '^COLOR_NETDEV_LINK_5000=' "&plugin;/settings.cfg" || echo 'COLOR_NETDEV_LINK_5000="0 255 255"' &gt;&gt; "&plugin;/settings.cfg"
+  grep -q '^NETDEV_INTERFACE=' "&plugin;/settings.cfg" || echo 'NETDEV_INTERFACE=""' &gt;&gt; "&plugin;/settings.cfg"
+fi
+
+# install the module package (always, so a rebuilt module replaces an older one)
+/sbin/installpkg "${KMOD_DIR}/${KMOD_PKG}" &gt;/dev/null
+/sbin/depmod -a
+
+# kill switch
+if [ -f "&plugin;/disabled" ]; then
+  echo "-----UGREEN LED driver is disabled (&plugin;/disabled exists), not starting-----"
+  logger -t ugreen-leds "disabled via &plugin;/disabled, not starting"
+  exit 0
+fi
+
+# (re)start the daemon
+if pgrep -f "/usr/bin/ugreen-leds" &gt;/dev/null 2&gt;&amp;1 ; then
+  pkill -f "/usr/bin/ugreen-leds" &gt;/dev/null 2&gt;&amp;1
+  sleep 1
+fi
+echo "/usr/bin/ugreen-leds" | at now -M &gt;/dev/null 2&gt;&amp;1
+
+echo
+echo "-----------------Installation of UGREEN LED Driver successful-----------------"
+echo
+
+</INLINE>
+</FILE>
+
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+
+echo "----------------------------------------"
+echo "-----Uninstalling UGREEN LED Driver-----"
+echo "----------------------------------------"
+pkill -f "/usr/bin/ugreen-leds" &gt;/dev/null 2&gt;&amp;1
+removepkg &name;-&version; &gt;/dev/null 2&gt;&amp;1
+for p in /var/log/packages/ugreen_leds-*; do
+  [ -e "${p}" ] || continue
+  removepkg "$(basename "${p}")" &gt;/dev/null 2&gt;&amp;1
+done
+rm -rf &plugin; &emhttp;
+echo
+echo "---------------------------------------------------------------------------"
+echo "---------UGREEN LED Driver uninstalled, please reboot your server!---------"
+echo "---------------------------------------------------------------------------"
+echo
+
+</INLINE>
+</FILE>
+</PLUGIN>
