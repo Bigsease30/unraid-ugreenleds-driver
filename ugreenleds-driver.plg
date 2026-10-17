@@ -2,8 +2,8 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name        "ugreenleds-driver">
   <!ENTITY author      "Bigsease30">
-  <!ENTITY version     "2026.10.17">
-  <!ENTITY md5         "49a7a6db3d6e668b57d7ddd3ca24d3f8">
+  <!ENTITY version     "2026.10.17a">
+  <!ENTITY md5         "f6efcb4f70bdca3d0567d2e1b316f9ff">
   <!ENTITY i2c-version "4.3">
   <!ENTITY i2c-md5     "779c835a2eb2e2ae65319f8de2d6a7d3">
   <!ENTITY gitURL      "https://raw.githubusercontent.com/&author;/unraid-&name;/main">
@@ -16,6 +16,10 @@
 <PLUGIN  name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" min="7.0.0" icon="lightbulb-o" support="https://github.com/&author;/unraid-&name;/issues">
 
 <CHANGES>
+
+###2026.10.17a
+- Disk LEDs now blink green during activity and return to solid white when idle (new setting COLOR_DISK_ACTIVITY, default "0 255 0")
+- Activity and offline detection merged into one loop so the red offline color can no longer be overwritten
 
 ###2026.10.17
 - Community fork of ich777's deprecated plugin
@@ -121,6 +125,7 @@ if [ ! -f "&plugin;/settings.cfg" ]; then
 MAPPING_METHOD="ata"
 DISK_SERIAL="SN1 SN2 SN3 SN4"
 COLOR_DISK_HEALTH="255 255 255"
+COLOR_DISK_ACTIVITY="0 255 0"
 BRIGHTNESS_DISK_LEDS="255"
 COLOR_DISK_UNAVAIL="255 0 0"
 LED_REFRESH_INTERVAL="0.5"
@@ -140,6 +145,7 @@ else
   # add keys introduced by this fork to existing configs
   grep -q '^COLOR_NETDEV_LINK_5000=' "&plugin;/settings.cfg" || echo 'COLOR_NETDEV_LINK_5000="0 255 255"' &gt;&gt; "&plugin;/settings.cfg"
   grep -q '^NETDEV_INTERFACE=' "&plugin;/settings.cfg" || echo 'NETDEV_INTERFACE=""' &gt;&gt; "&plugin;/settings.cfg"
+  grep -q '^COLOR_DISK_ACTIVITY=' "&plugin;/settings.cfg" || echo 'COLOR_DISK_ACTIVITY="0 255 0"' &gt;&gt; "&plugin;/settings.cfg"
 fi
 
 # install the module package (always, so a rebuilt module replaces an older one)

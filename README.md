@@ -8,7 +8,7 @@ All credit for the original driver and daemon goes to ich777 and miskcoo.
 **Install URL** (Plugins → Install Plugin):
 
 ```
-https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/unraid-ugreenleds-driver/master/ugreenleds-driver.plg
+https://raw.githubusercontent.com/Bigsease30/unraid-ugreenleds-driver/main/ugreenleds-driver.plg
 ```
 
 ## Why the original stopped working on 7.3.3
@@ -41,7 +41,8 @@ DX4600, DX4700, DXP2800, DXP4800 (incl. Plus/Pro), DXP6800, DXP8800, DXP480T (st
 |---|---|---|
 | `MAPPING_METHOD` | `ata` | `ata`, `hctl` or `serial` |
 | `DISK_SERIAL` | `SN1 SN2 SN3 SN4` | Serials in bay order (only for `serial`) |
-| `COLOR_DISK_HEALTH` | `255 255 255` | Healthy disk |
+| `COLOR_DISK_HEALTH` | `255 255 255` | Healthy, idle disk (solid) |
+| `COLOR_DISK_ACTIVITY` | `0 255 0` | Disk busy (blinks green); set to the health color for the old white-only blink |
 | `COLOR_DISK_UNAVAIL` | `255 0 0` | Disk went offline |
 | `BRIGHTNESS_DISK_LEDS` | `255` | 0–255 |
 | `LED_REFRESH_INTERVAL` | `0.5` | Disk activity poll (s) |
