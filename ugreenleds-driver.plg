@@ -1,7 +1,7 @@
 <?xml version='1.0' standalone='yes'?>
 <!DOCTYPE PLUGIN [
   <!ENTITY name        "ugreenleds-driver">
-  <!ENTITY author      "YOUR_GITHUB_USERNAME">
+  <!ENTITY author      "Bigsease30">
   <!ENTITY version     "2026.10.17">
   <!ENTITY md5         "49a7a6db3d6e668b57d7ddd3ca24d3f8">
   <!ENTITY i2c-version "4.3">
