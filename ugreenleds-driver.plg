@@ -2,7 +2,8 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name        "ugreenleds-driver">
   <!ENTITY author      "Bigsease30">
-  <!ENTITY version     "2026.10.17b">
+  <!ENTITY version     "2026.10.22">
+  <!ENTITY pkgversion  "2026.10.17b">
   <!ENTITY md5         "d5c323c813fd09439ce4981bb10520ab">
   <!ENTITY i2c-version "4.3">
   <!ENTITY i2c-md5     "779c835a2eb2e2ae65319f8de2d6a7d3">
@@ -16,6 +17,10 @@
 <PLUGIN  name="&name;" author="&author;" version="&version;" pluginURL="&pluginURL;" min="7.0.0" icon="lightbulb-o" support="https://github.com/&author;/unraid-&name;/issues">
 
 <CHANGES>
+
+###2026.10.22
+- Kernel module for Unraid 7.3.4 (kernel 6.18.58-Unraid)
+- Kernel module builds now run daily, so new Unraid releases are covered within a day
 
 ###2026.10.17b
 - 10 GbE network LED color is now blue (0 0 255); existing configs still on the old white default are updated
@@ -48,13 +53,13 @@
 <FILE Run="/bin/bash">
 <INLINE>
 pkill -f "/usr/bin/ugreen-leds" >/dev/null 2>&amp;1
-rm -f $(ls &plugin;/&name;-*.txz 2>/dev/null | grep -v '&version;')
+rm -f $(ls &plugin;/&name;-*.txz 2>/dev/null | grep -v '&pkgversion;')
 rm -f $(ls &plugin;/i2c-tools-*-x86_64-1.txz 2>/dev/null | grep -v '&i2c-version;')
 </INLINE>
 </FILE>
 
-<FILE Name="&plugin;/&name;-&version;.txz" Run="upgradepkg --install-new">
-<URL>&gitURL;/packages/&name;-&version;.txz</URL>
+<FILE Name="&plugin;/&name;-&pkgversion;.txz" Run="upgradepkg --install-new">
+<URL>&gitURL;/packages/&name;-&pkgversion;.txz</URL>
 <MD5>&md5;</MD5>
 </FILE>
 
@@ -185,7 +190,7 @@ echo "----------------------------------------"
 echo "-----Uninstalling UGREEN LED Driver-----"
 echo "----------------------------------------"
 pkill -f "/usr/bin/ugreen-leds" &gt;/dev/null 2&gt;&amp;1
-removepkg &name;-&version; &gt;/dev/null 2&gt;&amp;1
+removepkg &name;-&pkgversion; &gt;/dev/null 2&gt;&amp;1
 for p in /var/log/packages/ugreen_leds-*; do
   [ -e "${p}" ] || continue
   removepkg "$(basename "${p}")" &gt;/dev/null 2&gt;&amp;1
